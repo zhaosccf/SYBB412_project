@@ -1,0 +1,138 @@
+---
+title: "Class_project_clusterProfiler"
+author: "SZ"
+date: "4/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Enrichment analysis is a statistical method that determines whether genes from pre-defined sets (ex: those beloging to a specific GO term or KEGG pathway) are present more than would be expected in our dataset. To accompkish this goal, a common way is to incorporate the biological knowledge, such as Gene Ontology (GO) and Kyoto Encyclopedia of Genes and Genomes (KEGG).
+
+## Here we use clusterProfiler to perform Gene Ontology over-representation analysis and KEGG GSEA analysis. clusterProfiler implements methods to analyze, compare, and visualize functional profiles of genes and gene clusters.
+```{r}
+## load required packages
+setwd("~/SYBB412_class_project")
+
+suppressPackageStartupMessages(library(clusterProfiler))
+suppressPackageStartupMessages(library(org.Hs.eg.db))
+suppressPackageStartupMessages(library(tidyverse))
+
+```
+
+## Import our dataset and format to meet the requirment to be used in clusterProfiler
+```{r}
+
+## We firstly need to creat a database from org.Hs.eg.db
+database <- org.Hs.eg.db
+
+## we then read the significantly differentially expressed genes table and extract columns of gene symbol, ensembl id, and entrez id
+DEG_sig <- read.table("DESeq2_DEG_Sig_symbol_ensembl.tab", header = TRUE)
+
+gene_list <- DEG_sig[, 3]
+
+ensembl <- as.character(DEG_sig$ensemblid)
+
+ids <- bitr(ensembl, 
+            fromType = "ENSEMBL", 
+            toType = c("ENTREZID","SYMBOL"),
+            OrgDb = database)
+```
+
+## Perform GO over-representation (enrichment) analysis
+```{r}
+
+ego <- enrichGO(gene = ids[,1], ## We use ensembl id
+                OrgDb = database,
+                ont = "BP", ## We specify BP (Biological Process)
+                keyType = "ENSEMBL",
+                pAdjustMethod = "BH",
+                minGSSize = 10,
+                maxGSSize = 500,
+                pvalueCutoff = 0.05,
+                pool = FALSE,
+                readable = TRUE)
+
+## Use head function to check the result
+head(ego[, 1:8])
+
+```
+
+## clusterProfiler has quite a few ways to visualize the over-represented GO terms. Here We explore the barplot, dotplot, and enrichment plot.
+
+## The barplot and dotplot shows the number of genes associated with the first, for example, 10 terms (bar length or dot size) and the p-adjusted values for these terms (color). The categroyplot shows the connection between different terms and genes associated with each term.
+```{r}
+
+barplot(ego, showCategory = 10)
+
+dotplot(ego, showCategory = 10)
+
+cnetplot(ego, showCategory = 5, foldChange = gene_list, colorEdge = TRUE)
+
+```
+
+## Enrichment map organizes enriched terms into a network with edges connecting overlapping gene sets. In this way, mutually overlapping gene sets are tend to cluster together, making it easy to identify functional modules.
+```{r}
+emapplot(ego, showCategory = 30)
+
+## write the go enrichment result to a table and save the file
+GO_summary <- as.data.frame(ego)
+write.table(GO_summary, "GO_summary")
+
+```
+
+## We can also use clusterProfiler to perform GSEA analysis. To perform GSEA analysis of KEGG gene sets, clusterProfiler requires the genes to be identified using Entrez IDs for all genes in our results dataset. We also need to remove the NA values and duplicates (due to gene ID conversion) prior to the analysis
+```{r}
+## Firstly, we need to create a gene rank list. Read the table of all differentially expressed genes
+DEG <- read.table("DESeq2_DEG_all.tab", header = TRUE)
+
+## extract the "stat" and "gene_id" columns from DEG and give it a new name of gene_id
+
+gene_id <- DEG[,c(4,7)]
+
+## Remove NA or duplicated vaule for entrezid if there was any
+entrez <- filter(gene_id, geneid != "NA")
+entrez <- entrez[which(duplicated(gene_id$geneid) == F), ]
+
+## Creat the rank list
+rank_list <- entrez$stat
+names(rank_list) <- entrez$geneid
+rank_list <- sort(rank_list, decreasing = TRUE)
+
+## Check to make sure there is no NA in the list, and it returns FALSE, which is satisfactory.
+all(is.na(rank_list))
+
+```
+
+## Perform GSEA KEGG analysis
+```{r}
+gseaKEGG <- gseKEGG(rank_list,
+                    organism = "hsa",
+                    keyType = "kegg",
+                    pAdjustMethod = "BH",
+                    minGSSize = 10,
+                    maxGSSize = 500,
+                    pvalueCutoff = 0.05,
+                    use_internal_data = FALSE)
+
+gseaKEGG_summary <- as.data.frame(gseaKEGG)
+gseaKEGG_summary <- gseaKEGG_summary[order(gseaKEGG[,4], decreasing = TRUE),]
+
+## Save the GSEA KEGG analysis result as a table
+write.table(gseaKEGG_summary, "gseaKEGG_summary")
+
+## Again, we can plot dotplot
+dotplot(gseaKEGG, showCategory = 10, font.size = 6)
+
+## We can plot the GSEA plot for a single enriched pathway, for example, `hsa03050`, which has the highest enrichment score.
+gseaplot(gseaKEGG, geneSetID = 'hsa03050', title = "GSEA plot - hsa03050")
+
+```
+
+## Session Information
+```{r}
+sessionInfo()
+
+```
