@@ -1,0 +1,101 @@
+---
+title: "week5_in_class"
+author: "SZ"
+date: "2/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+```{r}
+
+mylist <- list(experimentA = c(1:5, 7:3), experimentB = matrix(1:6, nrow = 2))
+
+## 31
+
+lapply(mylist, length)
+
+lapply(mylist, function(x){length(x)})
+
+for (i in 1: length(mylist)){
+  print(length(mylist[[i]]))
+}
+
+
+lapply(mylist, sum)
+
+lapply(mylist, quantile)
+
+
+## 35
+
+lapply(mylist, function(x){log10(x)+1})
+
+
+
+```
+
+# apply function
+
+```{r}
+
+## 1
+
+myData <- cbind(x = 1, y = 8:15, z = c(101, 2:22))
+
+apply(myData, 1, mean)
+
+
+## 3
+
+apply(myData, 2, sort)
+
+## 5
+
+myData <- cbind(x = 1, y = 8:15, z = c(101, 2:22))
+a <- apply(myData, 1, function(x){log10(x)+1})
+
+
+## 9
+apply(myData, 2, length)
+
+##10
+
+apply(myData, 2, range)
+
+
+```
+
+
+## split function
+
+```{r}
+
+library(car)
+data(mtcars)
+
+head(mtcars)
+
+s <- split(mtcars, mtcars$cyl)
+
+
+View(s)
+
+s$`8`
+
+
+lapply(s, function(x){mean(x$mpg)})
+
+```
+
+
+
+
+
+
+
