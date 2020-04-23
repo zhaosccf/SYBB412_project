@@ -1,3 +1,7 @@
+SYBB412 Class Project
+
+RNAseq workflow – gene differential expression and gene set enrichment analysis
+
 Introduction
 
 This project retrieved data from the study “Whole transcriptome analysis identifies differentially regulated networks between osteosarcoma and normal bone samples” published on the journal of Experimental Biology and Medicine in 2017. This report summarizes the process of downloading the original data from Gene Expression Omnibus, quality control of the FASTQ files, mapping reads to the reference genome, counting how many reads mapped to each gene, and using R packages for gene differential expression and pathway analysis. There is also a discussion about the biological meaning of the results and biomedical relevance of the study at the end.
