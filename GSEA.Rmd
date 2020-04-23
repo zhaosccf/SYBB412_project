@@ -14,32 +14,32 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Here we use clusterProfiler to perform Gene Ontology over-representation analysis and KEGG GSEA analysis. clusterProfiler implements methods to analyze, compare, and visualize functional profiles of genes and gene clusters.
 ```{r}
 ## load required packages
-setwd("~/SYBB412_class_project")
+            setwd("~/SYBB412_class_project")
 
-suppressPackageStartupMessages(library(clusterProfiler))
-suppressPackageStartupMessages(library(org.Hs.eg.db))
-suppressPackageStartupMessages(library(tidyverse))
+            suppressPackageStartupMessages(library(clusterProfiler))
+            suppressPackageStartupMessages(library(org.Hs.eg.db))
+            suppressPackageStartupMessages(library(tidyverse))
 
 ```
 
 ## Import our dataset and format to meet the requirment to be used in clusterProfiler
-```{r}
+            ```{r}
 
-## We firstly need to creat a database from org.Hs.eg.db
-database <- org.Hs.eg.db
+            ## We firstly need to creat a database from org.Hs.eg.db
+            database <- org.Hs.eg.db
 
-## we then read the significantly differentially expressed genes table and extract columns of gene symbol, ensembl id, and entrez id
-DEG_sig <- read.table("DESeq2_DEG_Sig_symbol_ensembl.tab", header = TRUE)
+            ## we then read the significantly differentially expressed genes table and extract columns of gene symbol, ensembl id, and               entrez id
+            DEG_sig <- read.table("DESeq2_DEG_Sig_symbol_ensembl.tab", header = TRUE)
 
-gene_list <- DEG_sig[, 3]
+            gene_list <- DEG_sig[, 3]
 
-ensembl <- as.character(DEG_sig$ensemblid)
+            ensembl <- as.character(DEG_sig$ensemblid)
 
 ids <- bitr(ensembl, 
             fromType = "ENSEMBL", 
             toType = c("ENTREZID","SYMBOL"),
             OrgDb = database)
-```
+            ```
 
 ## Perform GO over-representation (enrichment) analysis
 ```{r}
