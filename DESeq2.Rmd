@@ -1,0 +1,276 @@
+---
+title: "SYBB412_Project_DESeq2"
+author: "SZ"
+date: "04/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load reuqired libraries
+```{r}
+
+setwd("~/SYBB412_class_project")
+
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(org.Hs.eg.db))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(tidyr))
+
+```
+
+## Genrate boxplot and histogram to visualize the between-sample distribution of counts
+```{r}
+
+# read the count matrix data
+
+cts <- read.table("SRR_featureCounts.Rmatrix.tab", header = TRUE)
+rownames(cts) <- cts$Geneid
+cts <- cts[,-c(1)]    ## set rownames as Geneid
+
+## plot box plot
+boxplot(cts, cex.axis = 0.3, cex.names = 0.1)
+
+## We found a few extreme outliers (high counts) dominate the plot completely so we log2-transform counts to visualize the counts again
+pseudocts = log2(cts + 1)
+boxplot(pseudocts, cex.axis = 0.3, cex.names = 0.1)
+
+## We can also draw a histogram plot to have a general idea about the distribution of counts. We plot the counts for a sinle sample "tumor1". We found a low number of counts associated with a large proportion of genes, which is a common feature of RNAseq count data.
+ggplot(cts) +
+   geom_histogram(aes(x = tumor1), stat = "bin", bins = 200) + 
+   xlim(-5, 500)  +
+   xlab("Raw expression counts") +
+   ylab("Number of genes")
+
+```
+
+## To make sure we have accurate comparisons of gene expression between samples, we should perform count normalization. 
+```{r}
+## We already read the cts data, now we need to read colData
+colData <- read.table("SRR_sample_id.tab", header = TRUE)
+colData <- colData[,c(1,3,2)]
+
+## Now we need to need to create a DESeqDataSet which is the core object of DESeq2. We will need the cts and colData. We will also need to specify a design formula. The design formula specifies the column(s) in the colData table and how they should be used in the analysis. NOTE: factors included in the design formula should match the column names in the colData.
+
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = colData,
+                              design= ~ sex + condition)
+
+## This step is to generate normalized counts. DESeq2 has a single estimateSizeFactors() function that will generate size factors for us. This step actually is included in DEseq() function. I worte it out to make sure we understand the pinciple behind it.
+dds <- estimateSizeFactors(dds)
+sizeFactors(dds)
+
+##  retrieve the normalized counts matrix from dds.
+normalized_counts <- counts(dds, normalized=TRUE)
+
+```
+
+## This step we will perform quality assesment and exploratory analysis using DESeq2. We will plot PCA and Hierarchical Clustering.
+```{r}
+# To plot PCA, we should firstly perform vst tranformation. NOTE: The vst transformation data is only necessary for these visualization methods during quality assessment and exploraty analysis. We will not use these tranformed counts for downstream analysis.
+vsd <- vst(dds, blind=FALSE)
+
+## Plot PCA
+pcaData <- plotPCA(vsd, intgroup=c("sex", "condition"), returnData=TRUE)
+
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+ggplot(pcaData, aes(PC1, PC2, color=condition, shape=sex)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed()
+
+## We will use the pheatmap() function from the pheatmap package to perform Hierarchical Clustering analysis (sample clustering). Firstly, we extract the vsd matrix from the object
+vsd_matrix <- assay(vsd)
+
+## Compute pairwise correlation values usig the base R function cor()
+vsd_cor <- cor(vsd_matrix)   
+
+### Plot heatmap
+pheatmap(vsd_cor)
+
+```
+
+## We performed normalization, quality assessment, and exploratory analysis, now we are going to use DESeq2 to find differentially expressed genes
+```{r}
+## We create our DESeqDataSet like we did at the previous step. NOTE: we do not need normalized counts for DESeq analysis. We then run the actual differential expression analysis.
+dds <- DESeqDataSetFromMatrix(countData = cts,
+                              colData = colData,
+                              design= ~ sex + condition)
+dds <- DESeq(dds)
+
+# it is important to understand what level it is in condition and we found the levels are normal and then tumor, which is corrct because we want to compare tumor to normal
+colData$condition
+
+## lists the coefficients
+resultsNames(dds) 
+
+## Build the results table and re-sort it according to padj values
+res <- results(dds, name="condition_tumor_vs_normal")
+res <- res[order(res$padj),]
+
+res <- as.data.frame(res)
+res$geneid <- rownames(res)
+write.table(res, file = "DESeq2_DEG_all.tab",
+            quote = FALSE, sep = "\t", row.names = FALSE)
+
+## filter to find out significantlly differentially expressed genes - padj < 0.05 & log2FoldChange >= 1 | log2FoldChange <= -1
+resSig <- subset(res, padj < 0.05 & log2FoldChange >= 1 | log2FoldChange <= -1)
+
+# Convert resSig to a data frame so we can visualize it and add geneid as the row name and make it as the first column.
+resSig_DE <- as.data.frame(resSig)
+resSig_DE$geneid <- rownames(resSig_DE)
+resSig_DE <- resSig_DE[,c(7,1,2,3,4,5,6)]
+
+# save resSig_DE - significantlly differentially expressed genes list
+write.table(resSig_DE, file = "DESeq2_DEG_Sig.tab",
+            quote = FALSE, sep = "\t", row.names = FALSE)
+
+```
+
+## We check the fit of the dispersion estimates, to me, this looks good for DESeq2 analysis
+```{r}
+## Plot dispersion estimates
+plotDispEsts(dds)
+
+```
+
+## Generate MA plot
+```{r}
+## From DESeq2 manual, we understand that it is more useful visualize the MA-plot for the shrunken log2 fold changes because it removes the noise associated with log2 fold changes from low count genes.
+resLFC <- lfcShrink(dds, coef="condition_tumor_vs_normal", type="apeglm")
+
+## plot MA
+plotMA(resLFC, ylim=c(-2,2))
+
+```
+
+## We use org.Hs.eg.db library to add gene symbols and ensembl id to the resSig_DE table
+```{r}
+
+resSig_DE$symbol <- mapIds(org.Hs.eg.db,
+                     keys=row.names(resSig_DE),
+                     column="SYMBOL",
+                     keytype="ENTREZID",
+                     multiVals="first")
+
+resSig_DE$ensemblid <- mapIds(org.Hs.eg.db,
+                     keys=row.names(resSig_DE),
+                     column="ENSEMBL",
+                     keytype="ENTREZID",
+                     multiVals="first")
+
+# save the file  - significantly differentially expressed genes with gene symbol and ensembl id
+
+write.table(resSig_DE, file = "DESeq2_DEG_Sig_symbol_ensembl.tab",
+            quote = FALSE, sep = "\t", row.names = FALSE)
+
+```
+
+## Extract top significantly regulated genes and plot the expression of these genes in comparison between tumor and normal samples.
+
+```{r}
+
+## Extract top20 significant down-regulated genes in osteosarcoma
+resSig_DE_down20 <- head(resSig_DE[order(resSig_DE$log2FoldChange), ], 20)
+
+## Extract top20 significant up-regulated genes in osteosarcoma
+resSig_DE_up20 <- head(resSig_DE[order(resSig_DE$log2FoldChange, decreasing = TRUE), ], 20)
+
+## Save top 20 up-regulated gene list and top 20 down-regulated gene list. Will include the lists in the final report
+
+write.table(resSig_DE_up20, file = "DESeq2_top20_upregulated.tab",
+            quote = FALSE, sep = "\t", row.names = FALSE)
+
+write.table(resSig_DE_down20, file = "DESeq2_top20_downregulated.tab",
+            quote = FALSE, sep = "\t", row.names = FALSE)
+
+## It will provide helpful information if we can check the expression of multiple genes of interest at the same time. We will use ggplot2 to plot multiple genes expression. We pull out top 20 upregulated gene information first
+
+top20up_sig_genes <- resSig_DE %>% 
+        arrange(-log2FoldChange)%>% 	#Arrange rows by padj values
+        pull(geneid) %>% 		#Extract character vector of ordered genes
+        head(n=20)
+
+## We find out normalized counts for these top 20 genes
+normalized_counts_df <- as.data.frame(normalized_counts)
+
+normalized_counts_df$Geneid <- rownames(normalized_counts)
+
+top20up_sig_norm <- normalized_counts_df %>%
+        filter(normalized_counts_df$Geneid %in% top20up_sig_genes)
+
+## We gather the counts for all samples into a single column using gather() function in the tidyl package
+gathered_top20up_sig <- top20up_sig_norm %>%
+  gather(colnames(top20up_sig_norm)[1:36], key = "condition", value = "normalized_counts")
+
+## Now we can plot the Top 20 up-regulated significant DE genes expression
+ggplot(gathered_top20up_sig) +
+        geom_point(aes(x = Geneid, y = normalized_counts, color = condition)) +
+        scale_y_log10() +
+        xlab("Genes") +
+        ylab("log10 Normalized Counts") +
+        ggtitle("Top 20 up-regulated Significant DE Genes") +
+        theme_bw() +
+	theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+	theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+## We generate the Heatmap of the transformed counts
+
+```{r}
+## counts transformation
+ntd <- normTransform(dds)
+
+## Generate heatmap 
+select <- order(rowMeans(counts(dds,normalized=TRUE)),
+                decreasing=TRUE)[1:20]
+df <- as.data.frame(colData(dds)[,c("condition", "sex")])
+
+rownames(df) <- colnames(ntd) ## make sure the rowname and colname coordinate with each other
+
+pheatmap(assay(ntd)[select,], cluster_rows=FALSE, show_rownames=FALSE,
+         cluster_cols=FALSE, annotation_col=df)
+
+```
+
+## We can also plot the volcano plot
+```{r}
+## delete NA value in the differential expression table - res
+res_volcano <- na.omit(res)
+
+## change padj value into -log10(padj) value
+res_volcano <- transform(res_volcano, padj = -1 * log10(res_volcano$padj))
+
+## group up-regulated, down-regulated, and unchanged genes
+down <- res_volcano[res_volcano$log2FoldChange <= -1 & res_volcano$padj >=1.3, ]
+up <- res_volcano[res_volcano$log2FoldChange >= 1 & res_volcano$padj >=1.3, ]
+down_no_sig <- res_volcano[res_volcano$log2FoldChange <= -1 & res_volcano$padj <=1.3, ]
+up_no_sig <- res_volcano[res_volcano$log2FoldChange >= 1 & res_volcano$padj <=1.3,]
+unchanged <- res_volcano[res_volcano$log2FoldChange >= -1 & res_volcano$log2FoldChange <=1, ]
+
+## plot the volcano plot
+plot(unchanged$log2FoldChange, unchanged$padj, xlim=c(-10,10), ylim=c(0,15),
+     col = "black", pch=16, cex = 0.6, main = "Gene Expression",
+     xlab = "log2FC", ylab = "-log10(padj)")
+points(up_no_sig$log2FoldChange, up_no_sig$padj, col = "black", pch = 16, cex = 0.6)
+points(down_no_sig$log2FoldChange, down_no_sig$padj, col = "black", pch = 16, cex = 0.6)
+points(up$log2FoldChange, up$padj, col = "red", pch = 16, cex = 0.6)
+points(down$log2FoldChange, down$padj, col = "red", pch = 16, cex = 0.6)
+abline(v = c(-1, 1), h = 1.3, lty = 3)
+
+```
+
+
+## Session information
+```{r}
+
+sessionInfo()
+
+```
